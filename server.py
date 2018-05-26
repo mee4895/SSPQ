@@ -138,6 +138,6 @@ if __name__ == "__main__":
 
     # Close the server
     server.close()
-    queue_worker.close()
+    queue_worker.cancel()
     loop.run_until_complete(server.wait_closed())
     loop.close()
