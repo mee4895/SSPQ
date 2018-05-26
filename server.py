@@ -93,12 +93,16 @@ async def user_handler(reader, writer):
                 print('Received unknown packet:\n' + msg.encode().decode())
 
 
-async def queue_handler():
+async def message_handler(message: Message, client):
+    client['current_msg'] = message
+    await message.send(client['writer'])
+
+
+async def queue_handler(loop):
     while True:
-        client = await client_queue.get()
         msg = await message_queue.get()
-        client['current_msg'] = msg
-        await msg.send(client['writer'])
+        client = await client_queue.get()
+        asyncio.ensure_future(message_handler(msg, client), loop=loop)
 
 
 # Entry Point
@@ -127,7 +131,7 @@ if __name__ == "__main__":
     client_queue = asyncio.Queue(loop=loop)
     coro = asyncio.start_server(user_handler, HOST, PORT, loop=loop)
     server = loop.run_until_complete(coro)
-    queue_worker = asyncio.ensure_future(queue_handler(), loop=loop)
+    queue_worker = asyncio.ensure_future(queue_handler(loop=loop), loop=loop)
 
     # Serve requests until Ctrl+C is pressed
     print('Serving on {}'.format(server.sockets[0].getsockname()))
