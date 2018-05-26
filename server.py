@@ -44,7 +44,7 @@ class LogLevel(OrderedEnum):
 
 
 async def user_handler(reader, writer):
-    client = Client(reader=reader, writer=writer)
+    client = Client(reader=reader, writer=writer, loop=loop)
     if LOG_LEVEL >= LogLevel.INFO:
         print('User{} connected'.format(str(client.address)))
 
@@ -54,11 +54,15 @@ async def user_handler(reader, writer):
         except MessageException as e:
             if LOG_LEVEL >= LogLevel.WARN:
                 print('User{} disconnected because: {}'.format(str(client.address), str(e)))
+            client.disconnected = True
+            client.message_event.set()
             client.writer.close()
             return
         except EOFError:
             if LOG_LEVEL >= LogLevel.INFO:
                 print('User{} disconnected'.format(str(client.address)))
+            client.disconnected = True
+            client.message_event.set()
             client.writer.close()
             return
 
@@ -73,6 +77,7 @@ async def user_handler(reader, writer):
                     continue
             if LOG_LEVEL >= LogLevel.DBUG:
                 print('User{} wants to receive'.format(str(client.address)))
+            client.message_event.clear()
             await client_queue.put(client)
         elif msg.type == MessageType.CONFIRM:
             if client.message is None:
@@ -82,6 +87,7 @@ async def user_handler(reader, writer):
             if LOG_LEVEL >= LogLevel.DBUG:
                 print('User{} confirms message'.format(str(client.address)))
             client.message = None
+            client.message_event.set()
             await asyncio.sleep(0)
         else:
             if LOG_LEVEL >= LogLevel.WARN:
@@ -91,12 +97,17 @@ async def user_handler(reader, writer):
 async def message_handler(message: Message, client: Client):
     client.message = message
     await message.send(client.writer)
+    await client.message_event.wait()
+    if client.message is not None:
+        await message_queue.put(message)
 
 
 async def queue_handler(loop):
     while True:
         msg = await message_queue.get()
         client = await client_queue.get()
+        while client.disconnected:
+            client = await client_queue.get()
         asyncio.ensure_future(message_handler(msg, client), loop=loop)
 
 

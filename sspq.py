@@ -84,10 +84,10 @@ async def read_message(reader: asyncio.StreamReader) -> Message:
 
 
 class Client():
-    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, loop):
         self.reader = reader
         self.writer = writer
         self.address = writer.get_extra_info('peername')
         self.message = None
-        self.confirmed = asyncio.Event()
-        self.died = asyncio.Event()
+        self.disconnected = False
+        self.message_event = asyncio.Event(loop=loop)
