@@ -1,6 +1,6 @@
 import asyncio
 from enum import Enum
-from sspq import Message, MessageType, MessageException, read_message, SSPQ_PORT
+from sspq import Message, MessageType, MessageException, read_message, Client, SSPQ_PORT
 from argparse import ArgumentParser, ArgumentTypeError
 
 
@@ -44,27 +44,22 @@ class LogLevel(OrderedEnum):
 
 
 async def user_handler(reader, writer):
-    client_address = writer.get_extra_info('peername')
+    client = Client(reader=reader, writer=writer)
     if LOG_LEVEL >= LogLevel.INFO:
-        print('User{} connected'.format(str(client_address)))
-
-    client_data = {
-        'writer': writer,
-        'current_msg': None
-    }
+        print('User{} connected'.format(str(client.address)))
 
     while True:
         try:
-            msg = await read_message(reader)
+            msg = await read_message(client.reader)
         except MessageException as e:
             if LOG_LEVEL >= LogLevel.WARN:
-                print('User{} disconnected because: {}'.format(str(client_address), str(e)))
-            writer.close()
+                print('User{} disconnected because: {}'.format(str(client.address), str(e)))
+            client.writer.close()
             return
         except EOFError:
             if LOG_LEVEL >= LogLevel.INFO:
-                print('User{} disconnected'.format(str(client_address)))
-            writer.close()
+                print('User{} disconnected'.format(str(client.address)))
+            client.writer.close()
             return
 
         if msg.type == MessageType.SEND:
@@ -72,30 +67,30 @@ async def user_handler(reader, writer):
                 print('Recieved: ' + msg.payload.decode())
             await message_queue.put(msg)
         elif msg.type == MessageType.RECEIVE:
-            if client_data['current_msg'] is not None:
+            if client.message is not None:
                 if LOG_LEVEL >= LogLevel.WARN:
                     print('Receive Message is going to be droped because client need to confirm his message.')
                     continue
             if LOG_LEVEL >= LogLevel.DBUG:
-                print('User{} wants to receive'.format(str(client_address)))
-            await client_queue.put(client_data)
+                print('User{} wants to receive'.format(str(client.address)))
+            await client_queue.put(client)
         elif msg.type == MessageType.CONFIRM:
-            if client_data['current_msg'] is None:
+            if client.message is None:
                 if LOG_LEVEL >= LogLevel.WARN:
                     print('Confirm Message is going to be droped because client has no message to confirm.')
                     continue
             if LOG_LEVEL >= LogLevel.DBUG:
-                print('User{} confirms message'.format(str(client_address)))
-            client_data['current_msg'] = None
+                print('User{} confirms message'.format(str(client.address)))
+            client.message = None
             await asyncio.sleep(0)
         else:
             if LOG_LEVEL >= LogLevel.WARN:
                 print('Received unknown packet:\n' + msg.encode().decode())
 
 
-async def message_handler(message: Message, client):
-    client['current_msg'] = message
-    await message.send(client['writer'])
+async def message_handler(message: Message, client: Client):
+    client.message = message
+    await message.send(client.writer)
 
 
 async def queue_handler(loop):

@@ -81,3 +81,13 @@ async def read_message(reader: asyncio.StreamReader) -> Message:
     payload = await reader.read(n=payload_size)
 
     return Message(type=type, retrys=retrys, timeout=timeout, payload_size=payload_size, payload=payload)
+
+
+class Client():
+    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        self.reader = reader
+        self.writer = writer
+        self.address = writer.get_extra_info('peername')
+        self.message = None
+        self.confirmed = asyncio.Event()
+        self.died = asyncio.Event()
