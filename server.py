@@ -113,7 +113,7 @@ if __name__ == "__main__":
         LogLevel.INFO,
         LogLevel.DBUG
     ], required=False, help='Set the appropriate log level for the output on stdout. Possible values are: [ fail | warn | info | dbug ]', dest='log_level', metavar='<log-level>')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s v.0.0.0')
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s v.0.1.0')
     args = parser.parse_args()
 
     # Use all the arguments
