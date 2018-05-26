@@ -10,6 +10,7 @@ __all__ = [
 ]
 
 MAGIC_VALUE = b'\x55\x99'
+SSPQ_PORT = 8888
 
 
 class MessageType(Enum):
@@ -36,7 +37,7 @@ class MessageException(Exception):
 
 
 class Message():
-    def __init__(self, type: MessageType, retrys: int, timeout: int, payload_size: int, payload: bytes):
+    def __init__(self, type: MessageType, retrys: int = 0, timeout: int = 0, payload_size: int = 0, payload: bytes = b''):
         self.type = type
         self.retrys = retrys
         self.timeout = timeout
