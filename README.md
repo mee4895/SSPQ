@@ -1,5 +1,4 @@
-# sspq
-super simple python queue
+# SSPQ - The super simple python queue
 > A quick messaging queue everywhere, there is python.
 
 
