@@ -1,7 +1,7 @@
 import asyncio
 from enum import Enum
 from sspq import *
-
+from argparse import ArgumentParser, ArgumentTypeError
 
 class OrderedEnum(Enum):
     def __ge__(self, other):
@@ -28,7 +28,18 @@ class LogLevel(OrderedEnum):
     INFO = '3'
     DBUG = '4'
 
-LOG_LEVEL = LogLevel.DBUG
+    @classmethod
+    def parse(cls, string: str) -> super:
+        string = string.lower()
+        if string == 'fail':
+            return cls.FAIL
+        if string == 'warn':
+            return cls.WARN
+        if string == 'info':
+            return cls.INFO
+        if string == 'dbug':
+            return cls.DBUG
+        raise ArgumentTypeError(str + ' is NOT a valid loglevel')
 
 queue = asyncio.Queue()
 
@@ -56,10 +67,29 @@ async def user_handler(reader, writer):
             print('Recieved: ' + msg.payload.decode())
 
 
-def main():
+# Entry Point
+if __name__ == "__main__":
+    # Setup argparse
+    parser = ArgumentParser(description='SSPQ - Super Simple Python Queue', add_help=True)
+    parser.add_argument('--host', action='store', default='127.0.0.1', required=False, help='Set the host address. Juse 0.0.0.0 to make the server public', dest='host', metavar='<host>')
+    parser.add_argument('-p', '--port', action='store', default='8888', type=int, required=False, help='Set the port the server listens to', dest='port', metavar='<port>')
+    parser.add_argument('-ll', '--loglevel', action='store', default='info', type=LogLevel.parse, choices=[
+        LogLevel.FAIL,
+        LogLevel.WARN,
+        LogLevel.INFO,
+        LogLevel.DBUG
+    ], required=False, help='Set the appropriate log level for the output on stdout. Possible values are: [ fail | warn | info | dbug ]', dest='log_level', metavar='<log-level>')
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s v.0.0.0')
+    args = parser.parse_args()
+
+    # Use all the arguments
+    LOG_LEVEL = args.log_level
+    HOST = args.host
+    PORT = args.port
+
     # Setup asyncio
     loop = asyncio.get_event_loop()
-    coro = asyncio.start_server(user_handler, '127.0.0.1', 8888, loop=loop)
+    coro = asyncio.start_server(user_handler, HOST, PORT, loop=loop)
     server = loop.run_until_complete(coro)
 
     # Serve requests until Ctrl+C is pressed
@@ -73,7 +103,3 @@ def main():
     server.close()
     loop.run_until_complete(server.wait_closed())
     loop.close()
-
-# Enty Hook
-if __name__ == "__main__":
-    main()
