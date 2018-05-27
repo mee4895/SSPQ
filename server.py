@@ -99,7 +99,11 @@ async def message_handler(message: Message, client: Client):
     await message.send(client.writer)
     await client.message_event.wait()
     if client.message is not None:
-        await message_queue.put(message)
+        if client.message.retrys == 0:
+            await dead_letter_queue.put(message)
+        else:
+            client.message.retrys -= 1
+            await message_queue.put(message)
 
 
 async def queue_handler(loop):
@@ -135,6 +139,7 @@ if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     message_queue = asyncio.Queue(loop=loop)
     client_queue = asyncio.Queue(loop=loop)
+    dead_letter_queue = asyncio.Queue(loop=loop)
     coro = asyncio.start_server(user_handler, HOST, PORT, loop=loop)
     server = loop.run_until_complete(coro)
     queue_worker = asyncio.ensure_future(queue_handler(loop=loop), loop=loop)
