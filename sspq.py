@@ -20,9 +20,6 @@ class MessageType(Enum):
     DEAD_RECEIVE = b'\xde'
     NO_RECEIVE = b'\x0e'
 
-    PING = b'\x91'
-    PONG = b'\x90'
-
     OTHER = b'\xff'
 
     @classmethod
