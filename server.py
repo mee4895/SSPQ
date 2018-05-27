@@ -89,6 +89,15 @@ async def user_handler(reader, writer):
             client.message = None
             client.message_event.set()
             await asyncio.sleep(0)
+        elif msg.type == MessageType.DEAD_RECEIVE:
+            if client.message is not None:
+                if LOG_LEVEL >= LogLevel.WARN:
+                    print('Dead-Receive Message is going to be droped because client need to confirm his message.')
+                    continue
+            if LOG_LEVEL >= LogLevel.DBUG:
+                print('User{} wants to dead receive'.format(str(client.address)))
+            client.message_event.clear()
+            await dead_letter_client_queue.put(client)
         else:
             if LOG_LEVEL >= LogLevel.WARN:
                 print('Received unknown packet:\n' + msg.encode().decode())

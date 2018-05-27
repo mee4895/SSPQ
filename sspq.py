@@ -17,6 +17,7 @@ class MessageType(Enum):
     SEND = b'\x5e'
     RECEIVE = b'\xec'
     CONFIRM = b'\xc0'
+    DEAD_RECEIVE = b'\xde'
 
     PING = b'\x91'
     PONG = b'\x90'
