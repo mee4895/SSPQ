@@ -101,11 +101,11 @@ async def message_handler(message: Message, client: Client):
     if client.message is not None:
         if client.message.retrys == 0:
             if not NDLQ:
-                await dead_letter_queue.put(message)
+                await dead_letter_queue.put(client.message)
         else:
             if client.message.retrys != 255:
                 client.message.retrys -= 1
-            await message_queue.put(message)
+            await message_queue.put(client.message)
 
 
 async def queue_handler(loop):
@@ -115,6 +115,23 @@ async def queue_handler(loop):
         while client.disconnected:
             client = await client_queue.get()
         asyncio.ensure_future(message_handler(msg, client), loop=loop)
+
+
+async def dead_letter_handler(message: Message, client: Client):
+    client.message = message
+    await message.send(client.writer)
+    await client.message_event.wait()
+    if client.message is not None:
+        await dead_letter_queue.put(message)
+
+
+async def dead_letter_queue_handler(loop):
+    while True:
+        msg = await dead_letter_queue.get()
+        client = await dead_letter_client_queue.get()
+        while client.disconnected:
+            client = await dead_letter_client_queue.get()
+        asyncio.ensure_future(dead_letter_handler(msg, client), loop=loop)
 
 
 # Entry Point
@@ -139,9 +156,11 @@ if __name__ == "__main__":
     message_queue = asyncio.Queue(loop=loop)
     client_queue = asyncio.Queue(loop=loop)
     dead_letter_queue = asyncio.Queue(loop=loop)
+    dead_letter_client_queue = asyncio.Queue(loop=loop)
     coro = asyncio.start_server(user_handler, args.host, args.port, loop=loop)
     server = loop.run_until_complete(coro)
     queue_worker = asyncio.ensure_future(queue_handler(loop=loop), loop=loop)
+    dead_letter_queue_worker = asyncio.ensure_future(dead_letter_queue_handler(loop=loop), loop=loop)
 
     # Serve requests until Ctrl+C is pressed
     print('Serving on {}'.format(server.sockets[0].getsockname()))
@@ -153,5 +172,6 @@ if __name__ == "__main__":
     # Close the server
     server.close()
     queue_worker.cancel()
+    dead_letter_queue_worker.cancel()
     loop.run_until_complete(server.wait_closed())
     loop.close()
