@@ -121,11 +121,11 @@ async def queue_handler(loop):
 if __name__ == "__main__":
     # Setup argparse
     parser = ArgumentParser(description='SSPQ Server - Super Simple Python Queue Server', add_help=True)
-    parser.add_argument('--host', action='store', default='127.0.0.1', required=False, help='Set the host address. Juse 0.0.0.0 to make the server public', dest='host', metavar='<host>')
+    parser.add_argument('--host', action='store', default='127.0.0.1', required=False, help='Set the host address. Juse 0.0.0.0 to make the server public', dest='host', metavar='<address>')
     parser.add_argument('-p', '--port', action='store', default=SSPQ_PORT, type=int, required=False, help='Set the port the server listens to', dest='port', metavar='<port>')
     parser.add_argument('-ll', '--loglevel', action='store', default='info', type=LogLevel.parse, choices=[
         LogLevel.FAIL, LogLevel.WARN, LogLevel.INFO, LogLevel.DBUG
-    ], required=False, help='Set the appropriate log level for the output on stdout. Possible values are: [ fail | warn | info | dbug ]', dest='log_level', metavar='<log-level>')
+    ], required=False, help='Set the appropriate log level for the output on stdout. Possible values are: [ fail | warn | info | dbug ]', dest='log_level', metavar='<level>')
     parser.add_argument('-ndlq', '--no-dead-letter-queue', action='store_true', required=False, help='Flag to dissable the dead letter queueing, failed packages are then simply dropped after the retrys run out.', dest='ndlq')
     parser.add_argument('-v', '--version', action='version', version='%(prog)s v.0.2.0')
     args = parser.parse_args()
