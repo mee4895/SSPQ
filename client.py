@@ -82,8 +82,9 @@ async def _receive_msg(host: str, port: int, loop):
     msg = await client.receive()
     print('Message:')
     print(msg.decode())
-    await client.confirm()
-    print('(Auto-confirmed message)')
+    if not NAC:
+        await client.confirm()
+        print('(Auto-confirmed message)')
     client.disconnect()
 
 
@@ -96,6 +97,7 @@ if __name__ == "__main__":
     parser.add_argument('-a', '--address', action='store', default='127.0.0.1', required=False, help='Set the server address to connect to.', dest='host', metavar='<host>')
     parser.add_argument('-p', '--port', action='store', default=SSPQ_PORT, type=int, required=False, help='Set the port the server listens to', dest='port', metavar='<port>')
     parser.add_argument('-m', '--message', action='store', default='', required=False, help='Set the message to send', dest='message', metavar='<message>')
+    parser.add_argument('-nac', '--no-auto-confirm', action='store_true', required=False, help='Disable auto confirm. WARNING this automatically requeues the message since the conection is terminated after the command finishes', dest='nac')
     parser.add_argument('-v', '--version', action='version', version='%(prog)s v.0.2.0')
     args = parser.parse_args()
 
@@ -104,6 +106,7 @@ if __name__ == "__main__":
         parser.error('The usage of empty messages is discuraged. Please add a message!')
     HOST = args.host
     PORT = args.port
+    NAC = args.nac
     message = args.message
 
     # setup asyncio
