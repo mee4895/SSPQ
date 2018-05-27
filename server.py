@@ -134,13 +134,17 @@ async def dead_letter_handler(message: Message, client: Client):
         await dead_letter_queue.put(message)
 
 
-async def dead_letter_queue_handler(loop):
+async def dead_letter_queue_handler(loop, active: bool=True):
     while True:
-        msg = await dead_letter_queue.get()
-        client = await dead_letter_client_queue.get()
-        while client.disconnected:
+        if active:
+            msg = await dead_letter_queue.get()
             client = await dead_letter_client_queue.get()
-        asyncio.ensure_future(dead_letter_handler(msg, client), loop=loop)
+            while client.disconnected:
+                client = await dead_letter_client_queue.get()
+            asyncio.ensure_future(dead_letter_handler(msg, client), loop=loop)
+        else:
+            client = await dead_letter_client_queue.get()
+            await Message(type=MessageType.NO_RECEIVE).send(client.writer)
 
 
 # Entry Point
@@ -169,7 +173,7 @@ if __name__ == "__main__":
     coro = asyncio.start_server(user_handler, args.host, args.port, loop=loop)
     server = loop.run_until_complete(coro)
     queue_worker = asyncio.ensure_future(queue_handler(loop=loop), loop=loop)
-    dead_letter_queue_worker = asyncio.ensure_future(dead_letter_queue_handler(loop=loop), loop=loop)
+    dead_letter_queue_worker = asyncio.ensure_future(dead_letter_queue_handler(loop=loop, active=(not args.ndlq)), loop=loop)
 
     # Serve requests until Ctrl+C is pressed
     print('Serving on {}'.format(server.sockets[0].getsockname()))

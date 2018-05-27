@@ -4,9 +4,15 @@ from argparse import ArgumentParser
 
 
 __all__ = [
+    'ServerStateException',
     'ClientStateException',
     'Client'
 ]
+
+
+class ServerStateException(Exception):
+    def __init__(self, msg: str):
+        super(msg)
 
 
 class ClientStateException(Exception):
@@ -46,7 +52,15 @@ class Client():
 
         # receive and process the message
         msg = await read_message(self.reader)
-        return msg.payload
+        if msg.type == MessageType.SEND:
+            return msg.payload
+        elif msg.type == MessageType.NO_RECEIVE:
+            if dead:
+                raise ServerStateException('Server has no dead letter queue')
+            else:
+                raise ServerStateException('Server blocks client from receiving')
+        else:
+            raise ServerStateException('Server answerd with an unknown package')
 
     async def confirm(self):
         if not self.connected:
