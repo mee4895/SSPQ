@@ -37,10 +37,9 @@ class MessageException(Exception):
 
 
 class Message():
-    def __init__(self, type: MessageType, retrys: int = 0, timeout: int = 0, payload_size: int = 0, payload: bytes = b''):
+    def __init__(self, type: MessageType, retrys: int = 0, payload_size: int = 0, payload: bytes = b''):
         self.type = type
         self.retrys = retrys
-        self.timeout = timeout
         self.payload_size = payload_size
         self.payload = payload
 
@@ -48,7 +47,6 @@ class Message():
         return MAGIC_VALUE + \
             self.type.value + \
             self.retrys.to_bytes(1, 'big', signed=False) + \
-            self.timeout.to_bytes(2, 'big', signed=False) + \
             self.payload_size.to_bytes(4, 'big', signed=False) + \
             self.payload
 
@@ -74,13 +72,11 @@ async def read_message(reader: asyncio.StreamReader) -> Message:
     type = MessageType.get(b_type)
     b_retrys = await reader.read(n=1)
     retrys = int.from_bytes(b_retrys, byteorder='big', signed=False)
-    b_timeout = await reader.read(n=2)
-    timeout = int.from_bytes(b_timeout, byteorder='big', signed=False)
     b_payload_size = await reader.read(n=4)
     payload_size = int.from_bytes(b_payload_size, byteorder='big', signed=False)
     payload = await reader.read(n=payload_size)
 
-    return Message(type=type, retrys=retrys, timeout=timeout, payload_size=payload_size, payload=payload)
+    return Message(type=type, retrys=retrys, payload_size=payload_size, payload=payload)
 
 
 class Client():

@@ -26,11 +26,11 @@ class Client():
         self.reader, self.writer = await asyncio.open_connection(host=host, port=port, loop=loop)
         self.connected = True
 
-    async def send(self, message: bytes, retrys: int=1, timeout: int=300) -> None:
+    async def send(self, message: bytes, retrys: int=3) -> None:
         if not self.connected:
             raise ClientStateException('Need to connect first!')
 
-        msg = Message(MessageType.SEND, retrys, timeout, len(message), message)
+        msg = Message(MessageType.SEND, retrys, len(message), message)
         await msg.send(self.writer)
 
     async def receive(self) -> bytes:
