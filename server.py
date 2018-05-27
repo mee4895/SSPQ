@@ -100,9 +100,11 @@ async def message_handler(message: Message, client: Client):
     await client.message_event.wait()
     if client.message is not None:
         if client.message.retrys == 0:
-            await dead_letter_queue.put(message)
+            if not NDLQ:
+                await dead_letter_queue.put(message)
         else:
-            client.message.retrys -= 1
+            if client.message.retrys != 255:
+                client.message.retrys -= 1
             await message_queue.put(message)
 
 
@@ -122,25 +124,22 @@ if __name__ == "__main__":
     parser.add_argument('--host', action='store', default='127.0.0.1', required=False, help='Set the host address. Juse 0.0.0.0 to make the server public', dest='host', metavar='<host>')
     parser.add_argument('-p', '--port', action='store', default=SSPQ_PORT, type=int, required=False, help='Set the port the server listens to', dest='port', metavar='<port>')
     parser.add_argument('-ll', '--loglevel', action='store', default='info', type=LogLevel.parse, choices=[
-        LogLevel.FAIL,
-        LogLevel.WARN,
-        LogLevel.INFO,
-        LogLevel.DBUG
+        LogLevel.FAIL, LogLevel.WARN, LogLevel.INFO, LogLevel.DBUG
     ], required=False, help='Set the appropriate log level for the output on stdout. Possible values are: [ fail | warn | info | dbug ]', dest='log_level', metavar='<log-level>')
+    parser.add_argument('-ndlq', '--no-dead-letter-queue', action='store_true', required=False, help='Flag to dissable the dead letter queueing, failed packages are then simply dropped after the retrys run out.', dest='ndlq')
     parser.add_argument('-v', '--version', action='version', version='%(prog)s v.0.2.0')
     args = parser.parse_args()
 
-    # Use all the arguments
+    # set 'global' log level
     LOG_LEVEL = args.log_level
-    HOST = args.host
-    PORT = args.port
+    NDLQ = args.ndlq
 
     # Setup asyncio & queues
     loop = asyncio.get_event_loop()
     message_queue = asyncio.Queue(loop=loop)
     client_queue = asyncio.Queue(loop=loop)
     dead_letter_queue = asyncio.Queue(loop=loop)
-    coro = asyncio.start_server(user_handler, HOST, PORT, loop=loop)
+    coro = asyncio.start_server(user_handler, args.host, args.port, loop=loop)
     server = loop.run_until_complete(coro)
     queue_worker = asyncio.ensure_future(queue_handler(loop=loop), loop=loop)
 
