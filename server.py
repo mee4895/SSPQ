@@ -157,7 +157,7 @@ if __name__ == "__main__":
         LogLevel.FAIL, LogLevel.WARN, LogLevel.INFO, LogLevel.DBUG
     ], required=False, help='Set the appropriate log level for the output on stdout. Possible values are: [ fail | warn | info | dbug ]', dest='log_level', metavar='<level>')
     parser.add_argument('-ndlq', '--no-dead-letter-queue', action='store_true', required=False, help='Flag to dissable the dead letter queueing, failed packages are then simply dropped after the retrys run out.', dest='ndlq')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.3.0')
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s v1.0.0')
     args = parser.parse_args()
 
     # set 'global' log level
