@@ -1,3 +1,11 @@
+"""
+SSPQ Client Module
+If it is directly executed it presents the user with a cli to interact with the
+server.
+If it is imported on the other hand it provides a client class as well as two
+exceptions to interact with the server in your own python code.
+"""
+
 import asyncio
 from sspq import Message, MessageType, read_message, SSPQ_PORT
 from argparse import ArgumentParser
@@ -11,21 +19,34 @@ __all__ = [
 
 
 class ServerStateException(Exception):
+    """
+    Exception to indicate a error on the server side.
+    """
     def __init__(self, msg: str):
         super().__init__(msg)
 
 
 class ClientStateException(Exception):
+    """
+    Exception to indicate a error in the state of the client. Mostly this is
+    used if messages are not correctly confirmed.
+    """
     def __init__(self, msg: str):
         super().__init__(msg)
 
 
 class Client():
+    """
+    This class is used to comunicate with the server.
+    """
     def __init__(self):
         self.connected = False
         self.receiving = False
 
     async def connect(self, host: str='127.0.0.1', port: int=SSPQ_PORT, loop=None):
+        """
+        This function connects the client to the server specified in the params
+        """
         if self.connected:
             raise ClientStateException('Already connected!')
 
@@ -33,6 +54,10 @@ class Client():
         self.connected = True
 
     async def send(self, message: bytes, retrys: int=3) -> None:
+        """
+        This function is used to send data packages to the queue. It can be used
+        in any connected state of the client.
+        """
         if not self.connected:
             raise ClientStateException('Need to connect first!')
 
@@ -40,6 +65,10 @@ class Client():
         await msg.send(self.writer)
 
     async def receive(self, dead: bool=False) -> bytes:
+        """
+        This function is used to get a package from the queue. It is blocking
+        until the data is received.
+        """
         if not self.connected:
             raise ClientStateException('Need to connect first!')
         if self.receiving:
@@ -63,6 +92,10 @@ class Client():
             raise ServerStateException('Server answerd with an unknown package')
 
     async def confirm(self):
+        """
+        This function confirms the finished processing of the message and finally
+        removes it from the queue server.
+        """
         if not self.connected:
             raise ClientStateException('Need to connect first!')
         if not self.receiving:
@@ -74,6 +107,9 @@ class Client():
         self.receiving = False
 
     def disconnect(self) -> None:
+        """
+        This function disconnects the client from the server.
+        """
         if not self.connected:
             raise ClientStateException('Need to connect first!')
 
@@ -84,6 +120,9 @@ class Client():
 
 
 async def _send_msg(message: str, host: str, port: int, retrys: int, loop):
+    """
+    This should only be used by the cli as a helper function to send messages.
+    """
     client = Client()
     await client.connect(host=host, port=port, loop=loop)
     await client.send(message.encode(), retrys=retrys)
@@ -91,6 +130,9 @@ async def _send_msg(message: str, host: str, port: int, retrys: int, loop):
 
 
 async def _receive_msg(host: str, port: int, nac: bool, dead: bool, loop):
+    """
+    This should only be used by the cli as a helper function to receive messages.
+    """
     client = Client()
     await client.connect(host=host, port=port, loop=loop)
     msg = await client.receive(dead=dead)
@@ -102,7 +144,7 @@ async def _receive_msg(host: str, port: int, nac: bool, dead: bool, loop):
     client.disconnect()
 
 
-# Entry Point
+# Entry Point for the cli
 if __name__ == "__main__":
     # Setup argparse
     parser = ArgumentParser(description='SSPQ Client - Super Simple Python Queue Client', add_help=True)
