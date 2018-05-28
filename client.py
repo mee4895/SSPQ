@@ -114,7 +114,7 @@ if __name__ == "__main__":
     parser.add_argument('-m', '--message', action='store', default='', required=False, help='Set the message to send', dest='message', metavar='<message>')
     parser.add_argument('--retrys', action='store', default='3', type=int, choices=range(0,256), required=False, help='Set the amount of retrys for failed messages. A value of 255 is used to indicate infinite retrys.', dest='retrys', metavar='[0-255]')
     parser.add_argument('-nac', '--no-auto-confirm', action='store_true', required=False, help='Disable auto confirm. WARNING this automatically requeues the message since the conection is terminated after the command finishes', dest='nac')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.3.0')
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s v1.0.0')
     args = parser.parse_args()
 
     # check args
