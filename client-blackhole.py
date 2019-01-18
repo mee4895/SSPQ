@@ -1,0 +1,149 @@
+import asyncio
+from sspq import Message, MessageType, read_message, SSPQ_PORT
+from argparse import ArgumentParser
+
+
+__all__ = [
+    'ServerStateException',
+    'ClientStateException',
+    'Client'
+]
+
+
+class ServerStateException(Exception):
+    """
+    Exception to indicate a error on the server side.
+    """
+    def __init__(self, msg: str):
+        super().__init__(msg)
+
+
+class ClientStateException(Exception):
+    """
+    Exception to indicate a error in the state of the client. Mostly this is
+    used if messages are not correctly confirmed.
+    """
+    def __init__(self, msg: str):
+        super().__init__(msg)
+
+
+class Client():
+    """
+    This class is used to comunicate with the server.
+    """
+    def __init__(self):
+        self.connected = False
+        self.receiving = False
+
+    async def connect(self, host: str='127.0.0.1', port: int=SSPQ_PORT, loop=None):
+        """
+        This function connects the client to the server specified in the params
+        """
+        if self.connected:
+            raise ClientStateException('Already connected!')
+
+        self.reader, self.writer = await asyncio.open_connection(host=host, port=port, loop=loop)
+        self.connected = True
+
+    async def send(self, message: bytes, retrys: int=3) -> None:
+        """
+        This function is used to send data packages to the queue. It can be used
+        in any connected state of the client.
+        """
+        if not self.connected:
+            raise ClientStateException('Need to connect first!')
+
+        msg = Message(MessageType.SEND, retrys, len(message), message)
+        await msg.send(self.writer)
+
+    async def receive(self, dead: bool=False) -> bytes:
+        """
+        This function is used to get a package from the queue. It is blocking
+        until the data is received.
+        """
+        if not self.connected:
+            raise ClientStateException('Need to connect first!')
+        if self.receiving:
+            raise ClientStateException('Can\'t receive a new package while still working on an old one.')
+
+        # tell the server the client is ready to receive
+        msg = Message(MessageType.RECEIVE if not dead else MessageType.DEAD_RECEIVE)
+        await msg.send(self.writer)
+        self.receiving = True
+
+        # receive and process the message
+        msg = await read_message(self.reader)
+        if msg.type == MessageType.SEND:
+            return msg.payload
+        elif msg.type == MessageType.NO_RECEIVE:
+            if dead:
+                raise ServerStateException('Server has no dead letter queue')
+            else:
+                raise ServerStateException('Server blocks client from receiving')
+        else:
+            raise ServerStateException('Server answerd with an unknown package')
+
+    async def confirm(self):
+        """
+        This function confirms the finished processing of the message and finally
+        removes it from the queue server.
+        """
+        if not self.connected:
+            raise ClientStateException('Need to connect first!')
+        if not self.receiving:
+            raise ClientStateException('No package to confirm')
+
+        # confirm the last package to the server
+        msg = Message(MessageType.CONFIRM)
+        await msg.send(self.writer)
+        self.receiving = False
+
+    def disconnect(self) -> None:
+        """
+        This function disconnects the client from the server.
+        """
+        if not self.connected:
+            raise ClientStateException('Need to connect first!')
+
+        self.writer.close()
+        # Only available in python 3.7 add this later
+        #await self.writer.wait_closed()
+        self.connected = False
+
+
+async def _receive_msg(host: str, port: int, nac: bool, dead: bool, loop):
+    """
+    This should only be used by the cli as a helper function to receive messages.
+    """
+    client = Client()
+    await client.connect(host=host, port=port, loop=loop)
+    while True:
+        msg = await client.receive(dead=dead)
+        print('Message:')
+        print(msg.decode())
+        if not nac:
+            await client.confirm()
+            print('(Auto-confirmed message)')
+        if msg.decode() == 'kill':
+            break
+    client.disconnect()
+
+
+# Entry Point for the cli
+if __name__ == "__main__":
+    # Setup argparse
+    parser = ArgumentParser(description='SSPQ Blackhole Client - Super Simple Python Queue Client', add_help=True)
+    parser.add_argument('-R', '-dr', '--dead-receive', action='store_true', required=False, help='Flag if you want to receive data from the dead letter queue', dest='dead_receive')
+    parser.add_argument('-a', '--address', action='store', default='127.0.0.1', required=False, help='Set the server address to connect to.', dest='host', metavar='<address>')
+    parser.add_argument('-p', '--port', action='store', default=SSPQ_PORT, type=int, required=False, help='Set the port the server listens to', dest='port', metavar='<port>')
+    parser.add_argument('-nac', '--no-auto-confirm', action='store_true', required=False, help='Disable auto confirm. WARNING this automatically requeues the message since the conection is terminated after the command finishes', dest='nac')
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s v1.0.0')
+    args = parser.parse_args()
+
+    # setup asyncio
+    loop = asyncio.get_event_loop()
+    if args.dead_receive:
+        loop.run_until_complete(_receive_msg(host=args.host, port=args.port, nac=args.nac, dead=True, loop=loop))
+    else:
+        loop.run_until_complete(_receive_msg(host=args.host, port=args.port, nac=args.nac, dead=False, loop=loop))
+    loop.close()
