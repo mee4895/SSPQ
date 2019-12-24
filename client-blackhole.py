@@ -35,14 +35,14 @@ class Client():
         self.connected = False
         self.receiving = False
 
-    async def connect(self, host: str='127.0.0.1', port: int=SSPQ_PORT, loop=None):
+    async def connect(self, host: str='127.0.0.1', port: int=SSPQ_PORT) -> None:
         """
         This function connects the client to the server specified in the params
         """
         if self.connected:
             raise ClientStateException('Already connected!')
 
-        self.reader, self.writer = await asyncio.open_connection(host=host, port=port, loop=loop)
+        self.reader, self.writer = await asyncio.open_connection(host=host, port=port)
         self.connected = True
 
     async def send(self, message: bytes, retrys: int=3) -> None:
@@ -83,7 +83,7 @@ class Client():
         else:
             raise ServerStateException('Server answerd with an unknown package')
 
-    async def confirm(self):
+    async def confirm(self) -> None:
         """
         This function confirms the finished processing of the message and finally
         removes it from the queue server.
@@ -98,25 +98,28 @@ class Client():
         await msg.send(self.writer)
         self.receiving = False
 
-    def disconnect(self) -> None:
+    async def disconnect(self) -> None:
         """
         This function disconnects the client from the server.
         """
         if not self.connected:
             raise ClientStateException('Need to connect first!')
 
+        await self.writer.drain()
         self.writer.close()
-        # Only available in python 3.7 add this later
-        #await self.writer.wait_closed()
+        await self.writer.wait_closed()
         self.connected = False
 
 
-async def _receive_msg(host: str, port: int, nac: bool, dead: bool, loop):
+async def _receive_msg(host: str = '127.0.0.1', port: int = SSPQ_PORT, nac: bool = False, dead: bool = False) -> None:
     """
     This should only be used by the cli as a helper function to receive messages.
     """
     client = Client()
-    await client.connect(host=host, port=port, loop=loop)
+    await client.connect(host=host, port=port)
+    if client.connected:
+        print(f'Connected to {(host, port)}')
+
     while True:
         msg = await client.receive(dead=dead)
         print('Message:')
@@ -126,24 +129,24 @@ async def _receive_msg(host: str, port: int, nac: bool, dead: bool, loop):
             print('(Auto-confirmed message)')
         if msg.decode() == 'kill':
             break
-    client.disconnect()
+    await client.disconnect()
 
 
 # Entry Point for the cli
 if __name__ == "__main__":
     # Setup argparse
     parser = ArgumentParser(description='SSPQ Blackhole Client - Super Simple Python Queue Client', add_help=True)
-    parser.add_argument('-R', '-dr', '--dead-receive', action='store_true', required=False, help='Flag if you want to receive data from the dead letter queue', dest='dead_receive')
+    parser.add_argument('-R', '-dr', '--dead-receive', action='store_true', default=False, required=False, help='Flag if you want to receive data from the dead letter queue', dest='dead')
     parser.add_argument('-a', '--address', action='store', default='127.0.0.1', required=False, help='Set the server address to connect to.', dest='host', metavar='<address>')
     parser.add_argument('-p', '--port', action='store', default=SSPQ_PORT, type=int, required=False, help='Set the port the server listens to', dest='port', metavar='<port>')
-    parser.add_argument('-nac', '--no-auto-confirm', action='store_true', required=False, help='Disable auto confirm. WARNING this automatically requeues the message since the conection is terminated after the command finishes', dest='nac')
+    parser.add_argument('-nac', '--no-auto-confirm', action='store_true', default=False, required=False, help='Disable auto confirm. WARNING this automatically requeues the message since the conection is terminated after the command finishes', dest='nac')
     parser.add_argument('-v', '--version', action='version', version='%(prog)s v1.0.0')
     args = parser.parse_args()
 
     # setup asyncio
     loop = asyncio.get_event_loop()
-    if args.dead_receive:
-        loop.run_until_complete(_receive_msg(host=args.host, port=args.port, nac=args.nac, dead=True, loop=loop))
-    else:
-        loop.run_until_complete(_receive_msg(host=args.host, port=args.port, nac=args.nac, dead=False, loop=loop))
+    try:
+        loop.run_until_complete(_receive_msg(**args.__dict__))
+    except KeyboardInterrupt:
+        pass
     loop.close()

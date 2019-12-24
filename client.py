@@ -25,11 +25,11 @@ class Client():
         self.connected = False
         self.receiving = False
 
-    async def connect(self, host: str='127.0.0.1', port: int=SSPQ_PORT, loop=None):
+    async def connect(self, host: str='127.0.0.1', port: int=SSPQ_PORT):
         if self.connected:
             raise ClientStateException('Already connected!')
 
-        self.reader, self.writer = await asyncio.open_connection(host=host, port=port, loop=loop)
+        self.reader, self.writer = await asyncio.open_connection(host=host, port=port)
         self.connected = True
 
     async def send(self, message: bytes, retrys: int=3) -> None:
@@ -73,33 +73,33 @@ class Client():
         await msg.send(self.writer)
         self.receiving = False
 
-    def disconnect(self) -> None:
+    async def disconnect(self) -> None:
         if not self.connected:
             raise ClientStateException('Need to connect first!')
 
+        await self.writer.drain()
         self.writer.close()
-        # Only available in python 3.7 add this later
-        #await self.writer.wait_closed()
+        await self.writer.wait_closed()
         self.connected = False
 
 
-async def _send_msg(message: str, host: str, port: int, retrys: int, loop):
+async def _send_msg(message: str, host: str, port: int, retrys: int):
     client = Client()
-    await client.connect(host=host, port=port, loop=loop)
+    await client.connect(host=host, port=port)
     await client.send(message.encode(), retrys=retrys)
-    client.disconnect()
+    await client.disconnect()
 
 
-async def _receive_msg(host: str, port: int, nac: bool, dead: bool, loop):
+async def _receive_msg(host: str, port: int, nac: bool, dead: bool):
     client = Client()
-    await client.connect(host=host, port=port, loop=loop)
+    await client.connect(host=host, port=port)
     msg = await client.receive(dead=dead)
     print('Message:')
     print(msg.decode())
     if not nac:
         await client.confirm()
         print('(Auto-confirmed message)')
-    client.disconnect()
+    await client.disconnect()
 
 
 # Entry Point
@@ -124,9 +124,9 @@ if __name__ == "__main__":
     # setup asyncio
     loop = asyncio.get_event_loop()
     if args.send:
-        loop.run_until_complete(_send_msg(args.message, host=args.host, port=args.port, retrys=args.retrys, loop=loop))
+        loop.run_until_complete(_send_msg(args.message, host=args.host, port=args.port, retrys=args.retrys))
     if args.receive:
-        loop.run_until_complete(_receive_msg(host=args.host, port=args.port, nac=args.nac, dead=False, loop=loop))
+        loop.run_until_complete(_receive_msg(host=args.host, port=args.port, nac=args.nac, dead=False))
     if args.dead_receive:
-        loop.run_until_complete(_receive_msg(host=args.host, port=args.port, nac=args.nac, dead=True, loop=loop))
+        loop.run_until_complete(_receive_msg(host=args.host, port=args.port, nac=args.nac, dead=True))
     loop.close()

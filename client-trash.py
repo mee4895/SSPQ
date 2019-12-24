@@ -107,22 +107,21 @@ class Client():
 
         await self.writer.drain()
         self.writer.close()
-        # Only available in python 3.7 add this later
-        #await self.writer.wait_closed()
+        await self.writer.wait_closed()
         self.connected = False
 
 
-async def _send_msg(loop):
+async def _send_msg():
     """
     This should only be used by the cli as a helper function to send messages.
     """
     client = Client()
-    await client.connect(host='127.0.0.1', port=8888, loop=loop)
+    await client.connect(host='127.0.0.1', port=8888)
 
-    for i in range(1, 10000):
-        #with open('5K.base64', 'rb') as file:
-        #    await client.send(file.read(), retrys=3)
-        await client.send(('Message: ' + str(i)).encode())
+    for i in range(1, 100):
+        #with open('testdata/10K.base64', 'rb') as file:
+        #    await client.send(file.read() + bytes(i), retrys=3)
+        await client.send(('Data: ' + str(i)).encode())
         print(i)
         #await asyncio.sleep(0.00001)
     await client.disconnect()
@@ -131,5 +130,5 @@ async def _send_msg(loop):
 if __name__ == "__main__":
     # setup asyncio
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(_send_msg(loop=loop))
+    loop.run_until_complete(_send_msg())
     loop.close()
