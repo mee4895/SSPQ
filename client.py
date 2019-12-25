@@ -3,13 +3,6 @@ from sspq import Message, MessageType, read_message, SSPQ_PORT
 from argparse import ArgumentParser
 
 
-__all__ = [
-    'ServerStateException',
-    'ClientStateException',
-    'Client'
-]
-
-
 class ServerStateException(Exception):
     def __init__(self, msg: str):
         super().__init__(msg)

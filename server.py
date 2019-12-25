@@ -1,50 +1,11 @@
 import asyncio
-from enum import Enum
-from sspq import Message, MessageType, MessageException, read_message, Client, SSPQ_PORT
+from sspq import *
+from sspq import Server_Client
 from argparse import ArgumentParser, ArgumentTypeError
 
 
-class OrderedEnum(Enum):
-    def __ge__(self, other):
-        if self.__class__ is other.__class__:
-            return self.value >= other.value
-        return NotImplemented
-    def __gt__(self, other):
-        if self.__class__ is other.__class__:
-            return self.value > other.value
-        return NotImplemented
-    def __le__(self, other):
-        if self.__class__ is other.__class__:
-            return self.value <= other.value
-        return NotImplemented
-    def __lt__(self, other):
-        if self.__class__ is other.__class__:
-            return self.value < other.value
-        return NotImplemented
-
-
-class LogLevel(OrderedEnum):
-    FAIL = '1'
-    WARN = '2'
-    INFO = '3'
-    DBUG = '4'
-
-    @classmethod
-    def parse(cls, string: str) -> super:
-        _string = string.lower()
-        if _string == 'fail':
-            return cls.FAIL
-        if _string == 'warn':
-            return cls.WARN
-        if _string == 'info':
-            return cls.INFO
-        if _string == 'dbug':
-            return cls.DBUG
-        raise ArgumentTypeError(string + ' is NOT a valid loglevel')
-
-
 async def user_handler(reader, writer):
-    client = Client(reader=reader, writer=writer, loop=loop)
+    client = Server_Client(reader=reader, writer=writer, loop=loop)
     if LOG_LEVEL >= LogLevel.INFO:
         print(f'User {client.address} connected')
 
@@ -101,19 +62,20 @@ async def user_handler(reader, writer):
         else:
             if LOG_LEVEL >= LogLevel.WARN:
                 print('Received unknown packet:\n' + msg.encode().decode())
+            await asyncio.sleep(0)
 
 
-async def message_handler(message: Message, client: Client):
+async def message_handler(message: Message, client: Server_Client):
     client.message = message
     await message.send(client.writer)
     await client.message_event.wait()
     if client.message is not None:
-        if client.message.retrys == 0:
+        if client.message.retries == 0:
             if not NDLQ:
                 await dead_letter_queue.put(client.message)
         else:
-            if client.message.retrys != 255:
-                client.message.retrys -= 1
+            if client.message.retries != 255:
+                client.message.retries -= 1
             await message_queue.put(client.message)
 
 
@@ -126,7 +88,7 @@ async def queue_handler(loop):
         asyncio.ensure_future(message_handler(msg, client), loop=loop)
 
 
-async def dead_letter_handler(message: Message, client: Client):
+async def dead_letter_handler(message: Message, client: Server_Client):
     client.message = message
     await message.send(client.writer)
     await client.message_event.wait()
@@ -156,7 +118,7 @@ if __name__ == "__main__":
     parser.add_argument('-ll', '--loglevel', action='store', default='info', type=LogLevel.parse, choices=[
         LogLevel.FAIL, LogLevel.WARN, LogLevel.INFO, LogLevel.DBUG
     ], required=False, help='Set the appropriate log level for the output on stdout. Possible values are: [ fail | warn | info | dbug ]', dest='log_level', metavar='<level>')
-    parser.add_argument('-ndlq', '--no-dead-letter-queue', action='store_true', required=False, help='Flag to dissable the dead letter queueing, failed packages are then simply dropped after the retrys run out.', dest='ndlq')
+    parser.add_argument('-ndlq', '--no-dead-letter-queue', action='store_true', required=False, help='Flag to dissable the dead letter queueing, failed packages are then simply dropped after the retries run out.', dest='ndlq')
     parser.add_argument('-v', '--version', action='version', version='%(prog)s v1.0.0')
     args = parser.parse_args()
 
