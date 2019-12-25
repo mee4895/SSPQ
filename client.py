@@ -1,79 +1,7 @@
 import asyncio
-from sspq import Message, MessageType, read_message, SSPQ_PORT
+from sspq import *
 from argparse import ArgumentParser
 
-
-class ServerStateException(Exception):
-    def __init__(self, msg: str):
-        super().__init__(msg)
-
-
-class ClientStateException(Exception):
-    def __init__(self, msg: str):
-        super().__init__(msg)
-
-
-class Client():
-    def __init__(self):
-        self.connected = False
-        self.receiving = False
-
-    async def connect(self, host: str='127.0.0.1', port: int=SSPQ_PORT):
-        if self.connected:
-            raise ClientStateException('Already connected!')
-
-        self.reader, self.writer = await asyncio.open_connection(host=host, port=port)
-        self.connected = True
-
-    async def send(self, message: bytes, retrys: int=3) -> None:
-        if not self.connected:
-            raise ClientStateException('Need to connect first!')
-
-        msg = Message(MessageType.SEND, retrys, len(message), message)
-        await msg.send(self.writer)
-
-    async def receive(self, dead: bool=False) -> bytes:
-        if not self.connected:
-            raise ClientStateException('Need to connect first!')
-        if self.receiving:
-            raise ClientStateException('Can\'t receive a new package while still working on an old one.')
-
-        # tell the server the client is ready to receive
-        msg = Message(MessageType.RECEIVE if not dead else MessageType.DEAD_RECEIVE)
-        await msg.send(self.writer)
-        self.receiving = True
-
-        # receive and process the message
-        msg = await read_message(self.reader)
-        if msg.type == MessageType.SEND:
-            return msg.payload
-        elif msg.type == MessageType.NO_RECEIVE:
-            if dead:
-                raise ServerStateException('Server has no dead letter queue')
-            else:
-                raise ServerStateException('Server blocks client from receiving')
-        else:
-            raise ServerStateException('Server answerd with an unknown package')
-
-    async def confirm(self):
-        if not self.connected:
-            raise ClientStateException('Need to connect first!')
-        if not self.receiving:
-            raise ClientStateException('No package to confirm')
-
-        # confirm the last package to the server
-        msg = Message(MessageType.CONFIRM)
-        await msg.send(self.writer)
-        self.receiving = False
-
-    async def disconnect(self) -> None:
-        if not self.connected:
-            raise ClientStateException('Need to connect first!')
-
-        await self.writer.drain()
-        self.writer.close()
-        await self.writer.wait_closed()
-        self.connected = False
 
 
 async def _send_msg(message: str, host: str, port: int, retrys: int):
@@ -93,6 +21,7 @@ async def _receive_msg(host: str, port: int, nac: bool, dead: bool):
         await client.confirm()
         print('(Auto-confirmed message)')
     await client.disconnect()
+
 
 
 # Entry Point

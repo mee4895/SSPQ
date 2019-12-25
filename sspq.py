@@ -8,12 +8,14 @@ from enum import Enum
 
 
 __all__ = [
-    'LogLevel',
+    'Client',
+    'ClientStateException',
     'MAGIC_VALUE',
     'MessageType',
     'MessageException',
     'Message',
     'read_message',
+    'ServerStateException',
     'SSPQ_PORT'
 ]
 
@@ -30,25 +32,6 @@ SSPQ_PORT = 8888
 #
 # --- Enum Definitions ---
 #
-class OrderedEnum(Enum):
-    def __ge__(self, other):
-        if self.__class__ is other.__class__:
-            return self.value >= other.value
-        return NotImplemented
-    def __gt__(self, other):
-        if self.__class__ is other.__class__:
-            return self.value > other.value
-        return NotImplemented
-    def __le__(self, other):
-        if self.__class__ is other.__class__:
-            return self.value <= other.value
-        return NotImplemented
-    def __lt__(self, other):
-        if self.__class__ is other.__class__:
-            return self.value < other.value
-        return NotImplemented
-
-
 class MessageType(Enum):
     SEND = b'\x5e'
     RECEIVE = b'\xec'
@@ -66,26 +49,6 @@ class MessageType(Enum):
             return cls.OTHER
 
 
-class LogLevel(OrderedEnum):
-    FAIL = '1'
-    WARN = '2'
-    INFO = '3'
-    DBUG = '4'
-
-    @classmethod
-    def parse(cls, string: str) -> super:
-        _string = string.lower()
-        if _string == 'fail':
-            return cls.FAIL
-        if _string == 'warn':
-            return cls.WARN
-        if _string == 'info':
-            return cls.INFO
-        if _string == 'dbug':
-            return cls.DBUG
-        raise ArgumentTypeError(string + ' is NOT a valid loglevel')
-
-
 
 #
 # --- Exceptions ---
@@ -96,6 +59,23 @@ class MessageException(Exception):
     """
     def __init__(self, message):
         super().__init__(message)
+
+
+class ServerStateException(Exception):
+    """
+    This is raised if the server blocks the client or sends unsupported messages.
+    """
+    def __init__(self, msg: str):
+        super().__init__(msg)
+
+
+class ClientStateException(Exception):
+    """
+    This is raised if the client is in a incorrect state for the requested
+    operation.
+    """
+    def __init__(self, msg: str):
+        super().__init__(msg)
 
 
 
@@ -131,17 +111,88 @@ class Message():
         await writer.drain()
 
 
-class Server_Client():
+class Client():
     """
-    This represents a client connected to a server.
+    This class is used to comunicate with the server.
     """
-    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, loop):
-        self.reader = reader
-        self.writer = writer
-        self.address = writer.get_extra_info('peername')
-        self.message = None
-        self.disconnected = False
-        self.message_event = asyncio.Event(loop=loop)
+    def __init__(self):
+        self.connected = False
+        self.receiving = False
+
+    async def connect(self, host: str='127.0.0.1', port: int=SSPQ_PORT, loop=None) -> None:
+        """
+        This function connects the client to the server specified in the params
+        """
+        if self.connected:
+            raise ClientStateException('Already connected!')
+
+        self.reader, self.writer = await asyncio.open_connection(host=host, port=port, loop=loop)
+        self.connected = True
+
+    async def send(self, message: bytes, retrys: int=3) -> None:
+        """
+        This function is used to send data packages to the queue. It can be used
+        in any connected state of the client.
+        """
+        if not self.connected:
+            raise ClientStateException('Need to connect first!')
+
+        msg = Message(MessageType.SEND, retrys, len(message), message)
+        await msg.send(self.writer)
+
+    async def receive(self, dead: bool=False) -> bytes:
+        """
+        This function is used to get a package from the queue. It is blocking
+        until the data is received.
+        """
+        if not self.connected:
+            raise ClientStateException('Need to connect first!')
+        if self.receiving:
+            raise ClientStateException('Can\'t receive a new package while still working on an old one.')
+
+        # tell the server the client is ready to receive
+        msg = Message(MessageType.RECEIVE if not dead else MessageType.DEAD_RECEIVE)
+        await msg.send(self.writer)
+        self.receiving = True
+
+        # receive and process the message
+        msg = await read_message(self.reader)
+        if msg.type == MessageType.SEND:
+            return msg.payload
+        elif msg.type == MessageType.NO_RECEIVE:
+            if dead:
+                raise ServerStateException('Server has no dead letter queue')
+            else:
+                raise ServerStateException('Server blocks client from receiving')
+        else:
+            raise ServerStateException('Server answerd with an unknown package')
+
+    async def confirm(self) -> None:
+        """
+        This function confirms the finished processing of the message and finally
+        removes it from the queue server.
+        """
+        if not self.connected:
+            raise ClientStateException('Need to connect first!')
+        if not self.receiving:
+            raise ClientStateException('No package to confirm')
+
+        # confirm the last package to the server
+        msg = Message(MessageType.CONFIRM)
+        await msg.send(self.writer)
+        self.receiving = False
+
+    async def disconnect(self) -> None:
+        """
+        This function disconnects the client from the server.
+        """
+        if not self.connected:
+            raise ClientStateException('Need to connect first!')
+
+        await self.writer.drain()
+        self.writer.close()
+        await self.writer.wait_closed()
+        self.connected = False
 
 
 

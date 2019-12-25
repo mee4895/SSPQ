@@ -1,7 +1,60 @@
 import asyncio
 from sspq import *
-from sspq import Server_Client
 from argparse import ArgumentParser, ArgumentTypeError
+
+
+
+class OrderedEnum(Enum):
+    def __ge__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value >= other.value
+        return NotImplemented
+    def __gt__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value > other.value
+        return NotImplemented
+    def __le__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value <= other.value
+        return NotImplemented
+    def __lt__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value < other.value
+        return NotImplemented
+
+
+class LogLevel(OrderedEnum):
+    FAIL = '1'
+    WARN = '2'
+    INFO = '3'
+    DBUG = '4'
+
+    @classmethod
+    def parse(cls, string: str) -> super:
+        _string = string.lower()
+        if _string == 'fail':
+            return cls.FAIL
+        if _string == 'warn':
+            return cls.WARN
+        if _string == 'info':
+            return cls.INFO
+        if _string == 'dbug':
+            return cls.DBUG
+        raise ArgumentTypeError(string + ' is NOT a valid loglevel')
+
+
+class Server_Client():
+    """
+    This represents a client connected to a server.
+    """
+    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, loop):
+        self.reader = reader
+        self.writer = writer
+        self.address = writer.get_extra_info('peername')
+        self.message = None
+        self.disconnected = False
+        self.message_event = asyncio.Event(loop=loop)
+
 
 
 async def user_handler(reader, writer):
@@ -107,6 +160,7 @@ async def dead_letter_queue_handler(loop, active: bool=True):
         else:
             client = await dead_letter_client_queue.get()
             await Message(type=MessageType.NO_RECEIVE).send(client.writer)
+
 
 
 # Entry Point
