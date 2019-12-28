@@ -1,4 +1,5 @@
 import asyncio
+from enum import Enum
 from sspq import *
 from argparse import ArgumentParser, ArgumentTypeError
 
@@ -47,75 +48,79 @@ class Server_Client():
     """
     This represents a client connected to a server.
     """
-    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, loop):
+    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         self.reader = reader
         self.writer = writer
         self.address = writer.get_extra_info('peername')
         self.message = None
         self.disconnected = False
-        self.message_event = asyncio.Event(loop=loop)
+        self.message_event = asyncio.Event()
 
 
 
-async def user_handler(reader, writer):
-    client = Server_Client(reader=reader, writer=writer, loop=loop)
-    if LOG_LEVEL >= LogLevel.INFO:
-        print(f'User {client.address} connected')
+def get_user_handler(retry_override: int=None):
+    async def user_handler(reader, writer):
+        client = Server_Client(reader=reader, writer=writer)
+        if LOG_LEVEL >= LogLevel.INFO:
+            print(f'User {client.address} connected')
 
-    while True:
-        try:
-            msg = await read_message(client.reader)
-        except MessageException as e:
-            if LOG_LEVEL >= LogLevel.WARN:
-                print(f'User {client.address} disconnected because: {e}')
-            client.disconnected = True
-            client.message_event.set()
-            client.writer.close()
-            return
-        except EOFError:
-            if LOG_LEVEL >= LogLevel.INFO:
-                print(f'User {client.address} disconnected')
-            client.disconnected = True
-            client.message_event.set()
-            client.writer.close()
-            return
-
-        if msg.type == MessageType.SEND:
-            if LOG_LEVEL >= LogLevel.DBUG:
-                print('Recieved: ' + msg.payload.decode())
-            await message_queue.put(msg)
-        elif msg.type == MessageType.RECEIVE:
-            if client.message is not None:
+        while True:
+            try:
+                msg = await read_message(client.reader)
+            except MessageException as e:
                 if LOG_LEVEL >= LogLevel.WARN:
-                    print('Receive Message is going to be dropped because client need to confirm his message.')
+                    print(f'User {client.address} disconnected because: {e}')
+                client.disconnected = True
+                client.message_event.set()
+                client.writer.close()
+                return
+            except EOFError:
+                if LOG_LEVEL >= LogLevel.INFO:
+                    print(f'User {client.address} disconnected')
+                client.disconnected = True
+                client.message_event.set()
+                client.writer.close()
+                return
+
+            if msg.type == MessageType.SEND:
+                if LOG_LEVEL >= LogLevel.DBUG:
+                    print('Recieved: ' + msg.payload.decode())
+                if retry_override is not None:
+                    msg.retries = retry_override
+                await message_queue.put(msg)
+            elif msg.type == MessageType.RECEIVE:
+                if client.message is not None:
+                    if LOG_LEVEL >= LogLevel.WARN:
+                        print('Receive Message is going to be dropped because client need to confirm his message.')
                     continue
-            if LOG_LEVEL >= LogLevel.DBUG:
-                print('User{} wants to receive'.format(str(client.address)))
-            client.message_event.clear()
-            await client_queue.put(client)
-        elif msg.type == MessageType.CONFIRM:
-            if client.message is None:
+                if LOG_LEVEL >= LogLevel.DBUG:
+                    print('User{} wants to receive'.format(str(client.address)))
+                client.message_event.clear()
+                await client_queue.put(client)
+            elif msg.type == MessageType.CONFIRM:
+                if client.message is None:
+                    if LOG_LEVEL >= LogLevel.WARN:
+                        print('Confirm Message is going to be dropped because client has no message to confirm.')
+                    continue
+                if LOG_LEVEL >= LogLevel.DBUG:
+                    print('User{} confirms message'.format(str(client.address)))
+                client.message = None
+                client.message_event.set()
+                await asyncio.sleep(0)
+            elif msg.type == MessageType.DEAD_RECEIVE:
+                if client.message is not None:
+                    if LOG_LEVEL >= LogLevel.WARN:
+                        print('Dead-Receive Message is going to be dropped because client need to confirm his message.')
+                    continue
+                if LOG_LEVEL >= LogLevel.DBUG:
+                    print('User{} wants to dead receive'.format(str(client.address)))
+                client.message_event.clear()
+                await dead_letter_client_queue.put(client)
+            else:
                 if LOG_LEVEL >= LogLevel.WARN:
-                    print('Confirm Message is going to be dropped because client has no message to confirm.')
-                    continue
-            if LOG_LEVEL >= LogLevel.DBUG:
-                print('User{} confirms message'.format(str(client.address)))
-            client.message = None
-            client.message_event.set()
-            await asyncio.sleep(0)
-        elif msg.type == MessageType.DEAD_RECEIVE:
-            if client.message is not None:
-                if LOG_LEVEL >= LogLevel.WARN:
-                    print('Dead-Receive Message is going to be dropped because client need to confirm his message.')
-                    continue
-            if LOG_LEVEL >= LogLevel.DBUG:
-                print('User{} wants to dead receive'.format(str(client.address)))
-            client.message_event.clear()
-            await dead_letter_client_queue.put(client)
-        else:
-            if LOG_LEVEL >= LogLevel.WARN:
-                print('Received unknown packet:\n' + msg.encode().decode())
-            await asyncio.sleep(0)
+                    print('Received unknown packet:\n' + msg.encode().decode())
+                await asyncio.sleep(0)
+    return user_handler
 
 
 async def message_handler(message: Message, client: Server_Client):
@@ -173,6 +178,7 @@ if __name__ == "__main__":
         LogLevel.FAIL, LogLevel.WARN, LogLevel.INFO, LogLevel.DBUG
     ], required=False, help='Set the appropriate log level for the output on stdout. Possible values are: [ fail | warn | info | dbug ]', dest='log_level', metavar='<level>')
     parser.add_argument('-ndlq', '--no-dead-letter-queue', action='store_true', required=False, help='Flag to dissable the dead letter queueing, failed packages are then simply dropped after the retries run out.', dest='ndlq')
+    parser.add_argument('-r', '--force-retries', action='store', type=int, choices=range(0, 256), required=False, help='This overrides the retry values of all incoming packets to the given value. Values between 0 and 254 are possible retry values if 255 is used all packages are infinitely retried.', dest='retry', metavar='[0-255]')
     parser.add_argument('-v', '--version', action='version', version='%(prog)s v1.0.0')
     args = parser.parse_args()
 
@@ -186,7 +192,7 @@ if __name__ == "__main__":
     client_queue = asyncio.Queue()
     dead_letter_queue = asyncio.Queue()
     dead_letter_client_queue = asyncio.Queue()
-    coro = asyncio.start_server(user_handler, args.host, args.port, loop=loop)
+    coro = asyncio.start_server(get_user_handler(retry_override=args.retry), args.host, args.port, loop=loop)
     server = loop.run_until_complete(coro)
     queue_worker = asyncio.ensure_future(queue_handler(loop=loop), loop=loop)
     dead_letter_queue_worker = asyncio.ensure_future(dead_letter_queue_handler(loop=loop, active=(not args.ndlq)), loop=loop)
